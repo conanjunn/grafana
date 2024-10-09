@@ -31,16 +31,18 @@ systemJSPrototype.shouldFetch = () => true;
 
 const systemJSFetch = systemJSPrototype.fetch;
 systemJSPrototype.fetch = function (url: string, options?: Record<string, unknown>) {
+  // 将插件包装成Grafana要用的AMD模式
   return decorateSystemJSFetch(systemJSFetch, url, options);
 };
 
 const systemJSResolve = systemJSPrototype.resolve;
+// 加载第三方插件时在URL最后追加module.js?_cache=2.5.4来防止浏览器缓存
 systemJSPrototype.resolve = decorateSystemJSResolve.bind(systemJSPrototype, systemJSResolve);
 
 // Older plugins load .css files which resolves to a CSS Module.
 // https://github.com/WICG/webcomponents/blob/gh-pages/proposals/css-modules-v1-explainer.md#importing-a-css-module
 // Any css files loaded via SystemJS have their styles applied onload.
-systemJSPrototype.onload = decorateSystemJsOnload;
+systemJSPrototype.onload = decorateSystemJsOnload; // 处理css的动态加载
 
 export async function importPluginModule({
   path,
