@@ -39,7 +39,7 @@ export class DatasourceSrv implements DataSourceService {
   init(settingsMapByName: Record<string, DataSourceInstanceSettings>, defaultName: string) {
     this.datasources = {};
     this.settingsMapByUid = {};
-    this.settingsMapByName = settingsMapByName;
+    this.settingsMapByName = settingsMapByName; // 一个map，key是DataSource的name，value是具体信息
     this.defaultName = defaultName;
 
     for (const dsSettings of Object.values(settingsMapByName)) {
@@ -47,8 +47,8 @@ export class DatasourceSrv implements DataSourceService {
         dsSettings.uid = dsSettings.name; // -- Grafana --, -- Mixed etc
       }
 
-      this.settingsMapByUid[dsSettings.uid] = dsSettings;
-      this.settingsMapById[dsSettings.id] = dsSettings;
+      this.settingsMapByUid[dsSettings.uid] = dsSettings; // 一个map，key是DataSource的uid，value是具体信息
+      this.settingsMapById[dsSettings.id] = dsSettings; // 一个map，key是DataSource的id，value是具体信息
     }
 
     // Preload expressions
@@ -62,6 +62,7 @@ export class DatasourceSrv implements DataSourceService {
     return this.settingsMapByUid[uid];
   }
 
+  // 获取数据源的配置信息。添加数据源时配置的那些东西。
   getInstanceSettings(
     ref: string | null | undefined | DataSourceRef,
     scopedVars?: ScopedVars
@@ -72,9 +73,10 @@ export class DatasourceSrv implements DataSourceService {
     // But we still have dashboards/panels with old expression UID (-100)
     // To support both UIDs until we migrate them all to new one, this check is necessary
     if (isExpressionReference(nameOrUid)) {
+      // expression数据源就直接返回
       return expressionInstanceSettings;
     }
-
+    // 如果是默认DataSource就直接返回。
     if (nameOrUid === 'default' || nameOrUid == null) {
       return this.settingsMapByUid[this.defaultName] ?? this.settingsMapByName[this.defaultName];
     }
@@ -82,6 +84,8 @@ export class DatasourceSrv implements DataSourceService {
     // Complex logic to support template variable data source names
     // For this we just pick the current or first data source in the variable
     if (nameOrUid[0] === '$') {
+      // $开头说明是个变量，需要先解析变量
+      // 解析出变量的实际值
       const interpolatedName = this.templateSrv.replace(nameOrUid, scopedVars, variableInterpolation);
 
       let dsSettings;
@@ -89,6 +93,7 @@ export class DatasourceSrv implements DataSourceService {
       if (interpolatedName === 'default') {
         dsSettings = this.settingsMapByName[this.defaultName];
       } else {
+        // 支持用name获取和Uid获取
         dsSettings = this.settingsMapByUid[interpolatedName] ?? this.settingsMapByName[interpolatedName];
       }
 
@@ -98,6 +103,7 @@ export class DatasourceSrv implements DataSourceService {
 
       // Return an instance with un-interpolated values for name and uid
       return {
+        // 返回DataSource的信息
         ...dsSettings,
         isDefault: false,
         name: nameOrUid,
@@ -106,31 +112,38 @@ export class DatasourceSrv implements DataSourceService {
       };
     }
 
+    // 没有用变量时直接在map中检索后返回即可。支持uid，name，id获取。
     return this.settingsMapByUid[nameOrUid] ?? this.settingsMapByName[nameOrUid] ?? this.settingsMapById[nameOrUid];
   }
 
+  // 获取指定的DataSource信息，支持传入变量，名称，Uid。
   get(ref?: string | DataSourceRef | null, scopedVars?: ScopedVars): Promise<DataSourceApi> {
     let nameOrUid = getNameOrUid(ref);
     if (!nameOrUid) {
+      // 没有传值就用默认数据源
       return this.get(this.defaultName);
     }
 
     if (isExpressionReference(ref)) {
+      // expression数据源
       return Promise.resolve(this.datasources[ExpressionDatasourceUID]);
     }
 
     // Check if nameOrUid matches a uid and then get the name
     const byName = this.settingsMapByName[nameOrUid];
     if (byName) {
+      // name转为uid
       nameOrUid = byName.uid;
     }
 
     // This check is duplicated below, this is here mainly as performance optimization to skip interpolation
     if (this.datasources[nameOrUid]) {
+      // 有缓存就走缓存
       return Promise.resolve(this.datasources[nameOrUid]);
     }
 
     // Interpolation here is to support template variable in data source selection
+    // 解析变量
     nameOrUid = this.templateSrv.replace(nameOrUid, scopedVars, variableInterpolation);
 
     if (nameOrUid === 'default' && this.defaultName !== 'default') {
@@ -138,24 +151,29 @@ export class DatasourceSrv implements DataSourceService {
     }
 
     if (this.datasources[nameOrUid]) {
+      // 有缓存就走缓存
       return Promise.resolve(this.datasources[nameOrUid]);
     }
 
+    // 加载数据源，可能需要网络请求
     return this.loadDatasource(nameOrUid);
   }
 
   async loadDatasource(key: string): Promise<DataSourceApi<any, any>> {
     if (this.datasources[key]) {
+      // 有缓存就走缓存
       return Promise.resolve(this.datasources[key]);
     }
 
     // find the metadata
+    // 找到配置信息
     const instanceSettings = this.getInstanceSettings(key);
     if (!instanceSettings) {
       return Promise.reject({ message: `Datasource ${key} was not found` });
     }
 
     try {
+      // 加载DataSource。可能会远程加载
       const dsPlugin = await importDataSourcePlugin(instanceSettings.meta);
       // check if its in cache now
       if (this.datasources[key]) {
@@ -163,6 +181,7 @@ export class DatasourceSrv implements DataSourceService {
       }
 
       // If there is only one constructor argument it is instanceSettings
+      // 兼容angular，不解释了。
       const useAngular = dsPlugin.DataSourceClass.length !== 1;
       let instance: DataSourceApi<any, any>;
 
@@ -171,12 +190,14 @@ export class DatasourceSrv implements DataSourceService {
           instanceSettings,
         });
       } else {
+        // 实例化DataSource
         instance = new dsPlugin.DataSourceClass(instanceSettings);
       }
 
       instance.components = dsPlugin.components;
 
       // Some old plugins does not extend DataSourceApi so we need to manually patch them
+      // 对一些老插件进行兼容
       if (!(instance instanceof DataSourceApi)) {
         const anyInstance = instance as any;
         anyInstance.name = instanceSettings.name;
@@ -188,6 +209,7 @@ export class DatasourceSrv implements DataSourceService {
       }
 
       // store in instance cache
+      // 写入缓存
       this.datasources[key] = instance;
       this.datasources[instance.uid] = instance;
       return instance;
@@ -203,6 +225,7 @@ export class DatasourceSrv implements DataSourceService {
     return Object.values(this.settingsMapByName);
   }
 
+  // 列举出所有符合条件的DataSource
   getList(filters: GetDataSourceListFilters = {}): DataSourceInstanceSettings[] {
     const base = Object.values(this.settingsMapByName).filter((x) => {
       if (x.meta.id === 'grafana' || x.meta.id === 'mixed' || x.meta.id === 'dashboard') {
@@ -246,6 +269,7 @@ export class DatasourceSrv implements DataSourceService {
     });
 
     if (filters.variables) {
+      // 用于筛选出DataSource变量的选项
       for (const variable of this.templateSrv.getVariables()) {
         if (variable.type !== 'datasource') {
           continue;
@@ -340,6 +364,7 @@ export class DatasourceSrv implements DataSourceService {
   }
 
   async reload() {
+    // 重新从服务端拉取配置，重新初始化
     const settings = await getBackendSrv().get('/api/frontend/settings');
     config.datasources = settings.datasources;
     config.defaultDatasource = settings.defaultDatasource;
@@ -348,21 +373,24 @@ export class DatasourceSrv implements DataSourceService {
 }
 
 export function getNameOrUid(ref?: string | DataSourceRef | null): string | undefined {
+  // 如果是expression就直接返回expression dataSource
   if (isExpressionReference(ref)) {
     return ExpressionDatasourceRef.uid;
   }
-
+  // 确保返回的是一个String。name或者是uid。
   const isString = typeof ref === 'string';
   return isString ? ref : ref?.uid;
 }
 
 export function variableInterpolation<T>(value: T | T[]) {
+  // 如果是个多选的变量就直接用选中的第一个
   if (Array.isArray(value)) {
     return value[0];
   }
   return value;
 }
 
+// 用于获取@grafana/runtime里存的datasourceSrv实例。实例在public/app/app.ts里进行实例化的。
 export const getDatasourceSrv = (): DatasourceSrv => {
   return getDataSourceService() as DatasourceSrv;
 };
