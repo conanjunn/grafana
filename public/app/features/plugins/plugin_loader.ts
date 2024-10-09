@@ -54,10 +54,12 @@ export async function importPluginModule({
   isAngular?: boolean;
 }): Promise<System.Module> {
   if (version) {
+    // 加到一个cache里
     registerPluginInCache({ path, version });
   }
 
   const builtIn = builtInPlugins[path];
+  // 内置插件直接加载
   if (builtIn) {
     // for handling dynamic imports
     if (typeof builtIn === 'function') {
@@ -67,8 +69,10 @@ export async function importPluginModule({
     }
   }
 
+  // 拿到最终的import路径
   let modulePath = resolveModulePath(path);
 
+  // sandbox默认关闭。有关sandbox见： public/app/features/plugins/sandbox/README.md
   // the sandboxing environment code cannot work in nodejs and requires a real browser
   if (await isFrontendSandboxSupported({ isAngular, pluginId })) {
     return importPluginModuleInSandbox({ pluginId });
