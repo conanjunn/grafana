@@ -7,6 +7,7 @@ import { LOAD_PLUGIN_CSS_REGEX, JS_CONTENT_TYPE_REGEX, AMD_MODULE_REGEX, SHARED_
 import { SystemJSWithLoaderHooks } from './types';
 import { isHostedOnCDN } from './utils';
 
+// 将插件包装成AMD模式
 export async function decorateSystemJSFetch(
   systemJSFetch: SystemJSWithLoaderHooks['fetch'],
   url: string,
@@ -34,6 +35,7 @@ export async function decorateSystemJSFetch(
   return res;
 }
 
+// 加载第三方插件时在URL最后追加module.js?_cache=2.5.4来防止浏览器缓存
 export function decorateSystemJSResolve(
   this: SystemJSWithLoaderHooks,
   originalResolve: SystemJSWithLoaderHooks['resolve'],
@@ -59,6 +61,7 @@ export function decorateSystemJSResolve(
   }
 }
 
+// 处理css的动态加载
 export function decorateSystemJsOnload(err: unknown, id: string) {
   if (id.endsWith('.css') && !err) {
     const module = SystemJS.get(id);
